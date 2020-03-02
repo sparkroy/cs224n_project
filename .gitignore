@@ -1,0 +1,6 @@
+.DS_Store
+ckpts/*
+data/*
+bert_config/*
+papers/*
+
