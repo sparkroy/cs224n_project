@@ -61,18 +61,6 @@ def read_file(filename):
   """Read the contents of filename (str) and split into documents by chapter."""
 
   all_stories = []
-  # Input file format:
-  # See wiki.*.tokens for an example
-  # Documents are contiguously stored. Headers to sections are denoted by
-  # "=" on each side. The number of "=" indicates the depth. So the title for
-  # United States is "= United States =". "= = = Population = = =" indicates
-  # a section 3 levels deep (United States -> Demographics -> Population).
-  # There are blank lines between sections.
-  # Each line is a paragraph. Periods that are sentence delimiters have a space
-  # on each side. Periods in abbreviations do not have spaces.
-
-  # For parallel processing, we first split the single file into documents.
-  # Each document is a list of lines.
   tot = 0
   with tf.gfile.GFile(filename, "r") as reader:
     for line in reader:
@@ -125,7 +113,7 @@ def preproc_doc(document):
     line = tokenization.convert_to_unicode(line)
     line = line.replace(u"\u2018", "'").replace(u"\u2019", "'")
     sents = split_line_by_sentences(line)
-    sent_tokens = [tokenizer.tokenize(sent) for sent in sents if sent]
+    sent_tokens = [tokenizer.tokenize(sent) for sent in sents if sent] # list of words
     list_of_paragraphs.append(sent_tokens)
 
   # In case of any empty paragraphs, remove them.
