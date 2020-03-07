@@ -68,7 +68,7 @@ def read_file(filename):
       if not line:
         continue
       tot += 1
-      if tot > 100:
+      if tot > 10:
         break # hard code for quick testing!
       all_stories.append(line)
 
@@ -117,7 +117,8 @@ def preproc_doc(document):
     list_of_paragraphs.append(sent_tokens)
 
   # In case of any empty paragraphs, remove them.
-  list_of_paragraphs = [x for x in list_of_paragraphs if x] # list of list of token
+  list_of_paragraphs = [x for x in list_of_paragraphs if len(x) >= 16] # list of list of token
+  print(len(list_of_paragraphs))
 
   # Convert the list of paragraphs into TrainingInstance object
   # See preprocessing_utils.py for definition

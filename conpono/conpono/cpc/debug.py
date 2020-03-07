@@ -63,7 +63,7 @@ flags.DEFINE_string(
 
 ## Other parameters
 
-flags.DEFINE_bool("include_mlm", True, "Whether to include MLM loss/objective")
+flags.DEFINE_bool("include_mlm", False, "Whether to include MLM loss/objective")
 # use masks, set to True in eventual training
 
 flags.DEFINE_integer("num_choices", 32, "Number of negative samples + 1")
@@ -85,7 +85,7 @@ flags.DEFINE_integer("margin", 1, "Eta value for margin.")
 flags.DEFINE_float("mask_rate", 0.1, "Rate of masking for mlm.")
 
 flags.DEFINE_string(
-    "init_checkpoint", "../../../bert_config/bert_model.ckpt",
+    "init_checkpoint", None, #"../../../bert_config/bert_model.ckpt.data-00000-of-00001", # the bert file has format problems, can't restore??
     "Initial checkpoint (usually from a pre-trained BERT model).")
 
 flags.DEFINE_bool(
@@ -109,20 +109,18 @@ flags.DEFINE_float(
     "dataset_two_weight", 0, "Weight of second dataset."
     "Weight of second dataset will be 1-x")
 
-flags.DEFINE_bool("include_context", True, "Whether to include context.")
+flags.DEFINE_bool("include_context", False, "Whether to include context.")
 # include context for target?
 
-flags.DEFINE_bool("do_train", False, "Whether to run training.")
-# need to change this to True in training
+flags.DEFINE_bool("do_train", True, "Whether to run training.")
 
-flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
+flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
 
-flags.DEFINE_integer("train_batch_size", 2, "Total batch size for training.")
-# set to 32 in actual training!
+flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
 
 flags.DEFINE_integer("eval_batch_size", 32, "Total batch size for eval.")
 
-flags.DEFINE_integer("train_data_size", 10, "The number of examples in the"
+flags.DEFINE_integer("train_data_size", 100, "The number of examples in the"
                      "training data") # Rui: change this!
 
 flags.DEFINE_integer("eval_data_size", -1, "The number of examples in the"
@@ -450,42 +448,29 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
   def _decode_record(record, name_to_features, vocab_table):
     """Decodes a record to a TensorFlow example."""
     target_example = tf.parse_single_example(record[0], name_to_features)
-    # tf.print("the record shape!!!!!!!!!!!!!!!!!!!!\n", record, output_stream=sys.stdout)
-    # tf.print(record, output_stream=sys.stdout)
+    tf.print("the record shape:::", output_stream=sys.stdout)
+    tf.print(record.shape, output_stream=sys.stdout)
     target_example = tf.reshape(target_example["sents"],
                                 [FLAGS.max_para_length, FLAGS.max_sent_length])
-    # tf.print("t:", target_example.shape, target_example[0], output_stream=sys.stdout)
-    # with tf.Session() as sess:
-    #   evaluated = sess.run(target_example)
 
     # This is an unfortunate hack but is necessary to get around a TF error.
     dist0 = tf.reshape(
         tf.parse_single_example(record[1], name_to_features)["sents"],
         [FLAGS.max_para_length, FLAGS.max_sent_length])
-    # tf.print("0:", dist0[0], output_stream=sys.stdout)
-    
     dist1 = tf.reshape(
         tf.parse_single_example(record[2], name_to_features)["sents"],
         [FLAGS.max_para_length, FLAGS.max_sent_length])
-    # tf.print("1:", dist1[0], output_stream=sys.stdout)
-    
     dist2 = tf.reshape(
         tf.parse_single_example(record[3], name_to_features)["sents"],
         [FLAGS.max_para_length, FLAGS.max_sent_length])
-    # tf.print("2:", dist2[0], output_stream=sys.stdout)
-
     dist3 = tf.reshape(
         tf.parse_single_example(record[4], name_to_features)["sents"],
         [FLAGS.max_para_length, FLAGS.max_sent_length])
-    # tf.print("3:", dist3[0], output_stream=sys.stdout)
 
     inputs_obj = build_bert_inputs(target_example)
 
     distractor_obj = build_distractors([dist0, dist1, dist2, dist3],
                                        inputs_obj.context)
-    
-    # tf.print(inputs_obj.context, output_stream=sys.stdout)
-    # tf.print(distractor_obj, output_stream=sys.stdout)
 
     example = {}
     example["input_ids"] = tf.concat(
@@ -568,7 +553,6 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
     example["label_ids"] = tf.scatter_nd(
         tf.reshape(example["label_types"], [k_size, 1]), tf.range(k_size),
         [k_size * 2])
-    # tf.print("label_ids:", example["label_ids"].shape)
 
     # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
     # So cast all int64 to int32.
@@ -837,7 +821,6 @@ def main(_):
         is_training=True,
         drop_remainder=True,
         add_masking=FLAGS.include_mlm)
-    num_train_steps = 1 # RUI: delete this line
     estimator.train(input_fn=train_input_fn, steps=num_train_steps)
 
   if FLAGS.do_eval:
