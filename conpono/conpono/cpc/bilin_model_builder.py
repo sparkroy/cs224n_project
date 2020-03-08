@@ -67,7 +67,7 @@ def create_model(model, labels, label_types, num_choices, k_size=4):
     loss = tf.reduce_mean(
         tf.reduce_sum(example_weights * per_example_loss, axis=-1))
   
-  return (loss, per_example_loss, logits, probabilities)
+  return (loss, per_example_loss, logits, probabilities, tf.expand_dims(labels, axis=0))
 
 
 def gather_indexes(sequence_tensor, positions):

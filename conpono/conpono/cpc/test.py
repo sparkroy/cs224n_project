@@ -677,7 +677,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         token_type_ids=segment_ids,
         use_one_hot_embeddings=use_one_hot_embeddings)
 
-    (cpc_loss, _, logits, probabilities) = bilin_model_builder.create_model(
+    (cpc_loss, _, logits, probabilities, labels) = bilin_model_builder.create_model(
         model, label_ids, label_types, num_choices, k_size=FLAGS.k_size)
 
     if add_masking:
@@ -766,10 +766,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           eval_metrics=eval_metrics,
           scaffold_fn=scaffold_fn)
     else: # if mode == tf.estimator.ModeKeys.PREDICT:
-      tf.print("IN TEST MODE!!!!!!!!!!", output_stream=sys.stdout)
       output_spec = contrib_tpu.TPUEstimatorSpec(
           mode=mode,
-          predictions={"probabilities": probabilities, "logits": logits}, # add logits as well!
+          predictions={"probabilities": probabilities, "logits": logits, "labels": labels}, # add logits as well!
           scaffold_fn=scaffold_fn)
     return output_spec
 
@@ -900,9 +899,9 @@ class RewardShaper():
         # self.estimator.train(input_fn=train_input_fn, steps=1)
 
         input_function = self.generate_input_fn()
-        logits = self.estimator.predict(input_fn=input_function, predict_keys=['logits'])
+        logits = self.estimator.predict(input_fn=input_function, predict_keys=['logits', 'labels'])
         logits = next(logits)
-        # print(logits) # just the first logit
+        print(logits) # just the first logit
         return logits
 
 def main(_):
