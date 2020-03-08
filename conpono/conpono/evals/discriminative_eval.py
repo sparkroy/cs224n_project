@@ -222,7 +222,7 @@ def create_cpc_model_and_placeholders(num_choices):
 
 def create_cpc_input_from_text(tokenizer,
                                context,
-                               sents,
+                               sents, # targets
                                labels,
                                group_size=32,
                                max_seq_length=512):
