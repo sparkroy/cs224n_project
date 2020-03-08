@@ -289,7 +289,7 @@ def build_distractors(distractor_examples, context):
   return out
 
 
-def build_bert_inputs(example):
+def build_bert_inputs(example, start):
   """Convert example <Tensor [30, 70]> into bert inputs."""
   k_size = FLAGS.k_size
 
@@ -304,12 +304,15 @@ def build_bert_inputs(example):
       tf.not_equal(intermediate_examples_tensor, examples_zero_vector))
   paragraph_len = tf.reduce_sum(tf.cast(examples_bool_mask, tf.int32))
 
+#   start = tf.random.uniform([1],
+#                             0,
+#                             tf.reshape(paragraph_len, []) -
+#                             tf.reshape(context_size, []) + 1,
+#                             dtype=tf.int32)
   start = tf.random.uniform([1],
-                            0,
-                            tf.reshape(paragraph_len, []) -
-                            tf.reshape(context_size, []) + 1,
+                            start,
+                            start + 1,
                             dtype=tf.int32)
-
   # Slice the document into the before, after and context.
   # Discard the zero padding.
   sizes = tf.squeeze(
@@ -815,11 +818,11 @@ class RewardShaper():
             train_batch_size=FLAGS.train_batch_size,
             eval_batch_size=FLAGS.eval_batch_size,
             predict_batch_size=FLAGS.predict_batch_size)
+        
+        # given a story, where do we want to place our context?
+        self.length_before_context = 1
             
     def tokenize_story(self, story):
-        def create_int_feature(values):
-            feature = tf.train.Feature(int64_list=tf.train.Int64List(value=list(values)))
-            return feature
         def split_line_by_sentences(line):
             # Put trailing period back but not on the last element
             # because that usually leads to double periods.
@@ -845,6 +848,7 @@ class RewardShaper():
         max_sent_length = FLAGS.max_sent_length
         max_para_length = FLAGS.max_para_length
         sent_tensor = []
+        self.story_length = min(len(input_ids_list), max_para_length)
         for i in range(max_para_length):
             if i >= len(input_ids_list):
                 sent_tensor.append([0] * max_sent_length)
@@ -861,10 +865,8 @@ class RewardShaper():
         def input_function(params):
             batch_size = params['batch_size']
             # find features from self.story (a string)
-            features = self.tokenize_story(self.story)
-            target_example = features['sents'] # 70 x 30
-            # tf.print("!!!!!!!!!!!!!!!", target_example, output_stream=sys.stdout)
-            inputs_obj = build_bert_inputs(target_example)
+            target_example = self.story_features['sents'] # 70 x 30 tensor
+            inputs_obj = build_bert_inputs(target_example, self.length_before_context)
             k_size = FLAGS.k_size
             example = {}
             example["input_ids"] = inputs_obj.input_ids
@@ -887,6 +889,7 @@ class RewardShaper():
         given a story which is a string, outputs a prediction score
         """
         self.story = story
+        self.story_features = self.tokenize_story(self.story)
         # estimator automatically uses the latest ckpt from model_dir (defined inside run_config)
         # do we need to set mode to test??
         # probabilities is the only key in predictions
@@ -897,17 +900,29 @@ class RewardShaper():
         #     drop_remainder=True,
         #     add_masking=FLAGS.include_mlm)
         # self.estimator.train(input_fn=train_input_fn, steps=1)
-
         input_function = self.generate_input_fn()
-        logits = self.estimator.predict(input_fn=input_function, predict_keys=['logits', 'labels'])
-        logits = next(logits)
-        print(logits) # just the first logit
-        return logits
+
+        sum_score = 0.
+        for self.length_before_context in range(0,
+            self.story_length - FLAGS.context_size + 1):
+            predictions = self.estimator.predict(input_fn=input_function, predict_keys=['logits', 'labels'])
+            prediction = next(predictions)
+            scores = prediction['logits']
+            labels = prediction['labels']
+            score = 0.
+            for i in range(2 * FLAGS.k_size):
+                score += scores[i][labels[i]]
+            sum_score += score
+        
+        ave_score = sum_score / (self.story_length - FLAGS.context_size + 1)
+
+        return ave_score
 
 def main(_):
     reward = RewardShaper()
     story = "The gravel crunches under my feet as I walk , steps in time with the music that echoes in my ears . Bach . A genius , to be sure . I 've always liked his music . Partially for the way it makes me seem more wise , perhaps , and partially just out of a genuine enjoyment of his work . <newline> <newline> * '' You think you can just replace me ? ! `` * <newline> <newline> It takes me a tenth of a second to register the voice and spin around . There , raising his hands in twin fists , is someone *very* familiar . <newline> <newline> `` James ? '' I query , taking an instinctive step back even as I feel knowledge of various martial arts practises flooding into my mind . `` Is that you ? '' <newline> <newline> He takes a step forward , and I can see he 's panting , out of breath . `` James is my brother ! I 'm *you* , you fucking idiot ! '' <newline> <newline> It 's simple to keep my distance from him . The key with aggressors is to back off slowly , not giving them an excuse to close the ever-widening gap . `` Please , there 's no need to get angry . I 'm not quite sure what you mean . *I'm* me . '' <newline> <newline> Unfortunately , my technique is not quite perfect - or perhaps it just does not matter - and he advances anyways . Now that the initial shock of someone screaming and swearing ( ugh ) at me has worn off , I 'm free to examine him . To be quite honest , I must admit he does look like me . He 's a tad malnourished , not even close to being in shape , and has a potbelly that does n't quite fit on his frame , but otherwise he looks similar to a me that has n't washed or shaved in a week . <newline> <newline> `` I do n't know who the *hell* you are but you are going to get the fuck out of my city ! Out of my *home* ! You ... you ca n't just replace me ! '' One fist turns into a pointing hand , stabbing me in the chest with his index finger . I do n't think he quite expects the resistance he receives . <newline> <newline> `` I 'm sorry , sir , but I 'm afraid I do n't know who you are or why you think I 've replaced you . Perhaps you should try inquiring about this at a local police department ? '' *Rule three-hundred and seventy-nine . Defer to the local police for matters requiring authority . * Huh ? <newline> <newline> He growls , and he 's in my personal space , now . Not something I am entirely comfortable with , but it 's nothing that would set me off . Staying calm is always the correct path to take . `` Look , *kid* , you 're going to fuck off or die or something *right now* because I 'm going home ! To *my* home ! Not *yours* ! '' <newline> <newline> I see the shove coming , and let him do it . My stumble backwards is entirely anticipated , and I feel *great* . It 's such a nice day outside . The man- <newline> <newline> What man ? <newline> <newline> I swivel around , blinking and searching for someone . I 'm not quite sure who . There 's nothing there . <newline> <newline> Something *is* odd , though . <newline> <newline> In the corner of my eye , I see a truck retreating into the distance , coloured completely white . <newline> <newline> It 's not that . The hands on my watch have jumped forward by seven minutes and fifty-nine seconds . <newline> <newline> Odd ."
-    logits = reward.predict(story)
+    score = reward.predict(story)
+    print("the coherence score:", score)
 
 def main_original(_):
   tf.logging.set_verbosity(tf.logging.INFO)
