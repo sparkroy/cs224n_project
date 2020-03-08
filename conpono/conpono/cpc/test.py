@@ -37,6 +37,7 @@ from tensorflow.contrib import tpu as contrib_tpu
 from tensorflow.contrib import training as contrib_training
 
 import sys
+import numpy as np
 
 FLAGS = flags.FLAGS
 
@@ -63,10 +64,10 @@ flags.DEFINE_string(
 
 ## Other parameters
 
-flags.DEFINE_bool("include_mlm", True, "Whether to include MLM loss/objective")
+flags.DEFINE_bool("include_mlm", False, "Whether to include MLM loss/objective")
 # use masks, set to True in eventual training
 
-flags.DEFINE_integer("num_choices", 32, "Number of negative samples + 1")
+flags.DEFINE_integer("num_choices", 4, "Number of negative samples + 1")
 
 flags.DEFINE_integer("data_window_size", 5, "Number of documents to draw"
                      "negative samples from.")
@@ -87,6 +88,11 @@ flags.DEFINE_float("mask_rate", 0.1, "Rate of masking for mlm.")
 flags.DEFINE_string(
     "init_checkpoint", "../../../bert_config/bert_model.ckpt",
     "Initial checkpoint (usually from a pre-trained BERT model).")
+
+flags.DEFINE_string(
+    "cpc_ckpt", "../../../ckpts/model.ckpt-1.data-00000-of-00001",
+    "Initial checkpoint (usually from a pre-trained BERT model).")
+# change this path in actual evaluation
 
 flags.DEFINE_bool(
     "do_lower_case", True,
@@ -115,7 +121,9 @@ flags.DEFINE_bool("include_context", True, "Whether to include context.")
 flags.DEFINE_bool("do_train", True, "Whether to run training.")
 # need to change this to True in training
 
-flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
+flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
+
+flags.DEFINE_bool("do_test", True, "run test on a test set / single example.")
 
 flags.DEFINE_integer("train_batch_size", 2, "Total batch size for training.")
 # set to 32 in actual training!
@@ -128,7 +136,8 @@ flags.DEFINE_integer("train_data_size", 10, "The number of examples in the"
 flags.DEFINE_integer("eval_data_size", -1, "The number of examples in the"
                      "validation data")
 
-flags.DEFINE_integer("predict_batch_size", 8, "Total batch size for predict.")
+flags.DEFINE_integer("predict_batch_size", 1, "Total batch size for predict.")
+# original: 8. Changed to 1 for prediction, 1 at a time.
 
 flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
 
@@ -483,6 +492,7 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
 
     distractor_obj = build_distractors([dist0, dist1, dist2, dist3],
                                        inputs_obj.context)
+    # 28 distracting targets from different paragraphs (target concat context)
     
     # tf.print(inputs_obj.context, output_stream=sys.stdout)
     # tf.print(distractor_obj, output_stream=sys.stdout)
@@ -557,19 +567,18 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
 
     # Set shape explicitly for TPU
     k_size = FLAGS.k_size
-    # example["input_ids"].set_shape(
-    #     [FLAGS.num_choices + 1, FLAGS.max_seq_length])
-    # example["input_mask"].set_shape(
-    #     [FLAGS.num_choices + 1, FLAGS.max_seq_length])
-    # example["segment_ids"].set_shape(
-    #     [FLAGS.num_choices + 1, FLAGS.max_seq_length])
-    # example["label_types"].set_shape([k_size])
+    example["input_ids"].set_shape(
+        [FLAGS.num_choices + 1, FLAGS.max_seq_length])
+    example["input_mask"].set_shape(
+        [FLAGS.num_choices + 1, FLAGS.max_seq_length])
+    example["segment_ids"].set_shape(
+        [FLAGS.num_choices + 1, FLAGS.max_seq_length])
+    example["label_types"].set_shape([k_size])
 
     example["label_ids"] = tf.scatter_nd(
         tf.reshape(example["label_types"], [k_size, 1]), tf.range(k_size),
         [k_size * 2])
-    tf.print("label_types:", example["label_types"], output_stream=sys.stdout)
-    tf.print("label_ids:", example["label_ids"], output_stream=sys.stdout)
+    # tf.print("label_ids:", example["label_ids"].shape)
 
     # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
     # So cast all int64 to int32.
@@ -635,7 +644,6 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
     return d
 
   return input_fn
-
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
@@ -757,17 +765,152 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           loss=total_loss,
           eval_metrics=eval_metrics,
           scaffold_fn=scaffold_fn)
-    else:
+    else: # if mode == tf.estimator.ModeKeys.PREDICT:
+      tf.print("IN TEST MODE!!!!!!!!!!", output_stream=sys.stdout)
       output_spec = contrib_tpu.TPUEstimatorSpec(
           mode=mode,
-          predictions={"probabilities": probabilities},
+          predictions={"probabilities": probabilities, "logits": logits}, # add logits as well!
           scaffold_fn=scaffold_fn)
     return output_spec
 
   return model_fn
 
+class RewardShaper():
+    """
+    Scores the coherence of a story
+    """
+    def __init__(self):
+        tf.logging.set_verbosity(tf.logging.INFO)
+        bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
+        tpu_cluster_resolver = None
+        is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
+        run_config = contrib_tpu.RunConfig(
+            cluster=tpu_cluster_resolver,
+            master=FLAGS.master,
+            model_dir=FLAGS.output_dir,
+            save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+            tpu_config=contrib_tpu.TPUConfig(
+                iterations_per_loop=FLAGS.iterations_per_loop,
+                num_shards=FLAGS.num_tpu_cores,
+                per_host_input_for_training=is_per_host))
+        
+        num_train_steps = None
+        num_warmup_steps = None
+        model_fn = model_fn_builder(
+            bert_config=bert_config,
+            init_checkpoint=FLAGS.init_checkpoint,
+            learning_rate=FLAGS.learning_rate,
+            num_train_steps=num_train_steps,
+            num_warmup_steps=num_warmup_steps,
+            use_tpu=FLAGS.use_tpu,
+            use_one_hot_embeddings=FLAGS.use_tpu,
+            num_choices=FLAGS.num_choices,
+            add_masking=FLAGS.include_mlm)
+
+        # If TPU is not available, this will fall back to normal Estimator on CPU
+        # or GPU.
+        self.estimator = contrib_tpu.TPUEstimator(
+            use_tpu=FLAGS.use_tpu,
+            model_fn=model_fn,
+            config=run_config,
+            train_batch_size=FLAGS.train_batch_size,
+            eval_batch_size=FLAGS.eval_batch_size,
+            predict_batch_size=FLAGS.predict_batch_size)
+            
+    def tokenize_story(self, story):
+        def create_int_feature(values):
+            feature = tf.train.Feature(int64_list=tf.train.Int64List(value=list(values)))
+            return feature
+        def split_line_by_sentences(line):
+            # Put trailing period back but not on the last element
+            # because that usually leads to double periods.
+            sentences = [l + "." for l in line.split(" . ")]
+            sentences[-1] = sentences[-1][:-1]
+            return sentences
+        # change from file to string
+        tokenizer = tokenization.FullTokenizer(
+        vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case) # just use lower case?
+        line = story
+        line = tokenization.convert_to_unicode(line)
+        line = line.replace(u"\u2018", "'").replace(u"\u2019", "'")
+        sents = split_line_by_sentences(line)
+        assert len(sents) >= 16 # otherwise the model will report error!
+        sent_tokens = [tokenizer.tokenize(sent) for sent in sents if sent] # list of words
+        # sent_tokens: words
+        input_ids_list = [
+            tokenizer.convert_tokens_to_ids(tokens) for tokens in sent_tokens
+        ]
+        features = collections.OrderedDict()
+        # pack or trim sentences to max_sent_length
+        # pack paragraph to max_para_length
+        max_sent_length = FLAGS.max_sent_length
+        max_para_length = FLAGS.max_para_length
+        sent_tensor = []
+        for i in range(max_para_length):
+            if i >= len(input_ids_list):
+                sent_tensor.append([0] * max_sent_length)
+            else:
+                padded_ids = np.pad(
+                    input_ids_list[i], (0, max_sent_length),
+                    mode="constant")[:max_sent_length]
+                sent_tensor.append(padded_ids)
+        # sent_tensor = np.ravel(np.stack(sent_tensor))
+        features["sents"] = np.stack(sent_tensor) # create_int_feature(sent_tensor)
+        return features
+
+    def generate_input_fn(self):
+        def input_function(params):
+            batch_size = params['batch_size']
+            # find features from self.story (a string)
+            features = self.tokenize_story(self.story)
+            target_example = features['sents'] # 70 x 30
+            # tf.print("!!!!!!!!!!!!!!!", target_example, output_stream=sys.stdout)
+            inputs_obj = build_bert_inputs(target_example)
+            k_size = FLAGS.k_size
+            example = {}
+            example["input_ids"] = inputs_obj.input_ids
+            example["input_mask"] = inputs_obj.input_mask
+            example["segment_ids"] = inputs_obj.segment_ids
+            example["label_types"] = inputs_obj.label_types
+            example["label_ids"] = tf.scatter_nd(
+                tf.reshape(example["label_types"], [k_size, 1]), tf.range(k_size),
+                [k_size * 2])
+            for name in list(example.keys()):  # pylint: disable=g-builtin-op
+                t = example[name]
+                if t.dtype == tf.int64:
+                    t = tf.to_int32(t)
+                example[name] = t
+            return example
+        return input_function
+
+    def predict(self, story):
+        """
+        given a story which is a string, outputs a prediction score
+        """
+        self.story = story
+        # estimator automatically uses the latest ckpt from model_dir (defined inside run_config)
+        # do we need to set mode to test??
+        # probabilities is the only key in predictions
+        # tf.logging.info("***** Running training *****")
+        # train_input_fn = file_based_input_fn_builder(
+        #     input_file=FLAGS.train_file,
+        #     is_training=True,
+        #     drop_remainder=True,
+        #     add_masking=FLAGS.include_mlm)
+        # self.estimator.train(input_fn=train_input_fn, steps=1)
+
+        input_function = self.generate_input_fn()
+        logits = self.estimator.predict(input_fn=input_function, predict_keys=['logits'])
+        logits = next(logits)
+        # print(logits) # just the first logit
+        return logits
 
 def main(_):
+    reward = RewardShaper()
+    story = "The gravel crunches under my feet as I walk , steps in time with the music that echoes in my ears . Bach . A genius , to be sure . I 've always liked his music . Partially for the way it makes me seem more wise , perhaps , and partially just out of a genuine enjoyment of his work . <newline> <newline> * '' You think you can just replace me ? ! `` * <newline> <newline> It takes me a tenth of a second to register the voice and spin around . There , raising his hands in twin fists , is someone *very* familiar . <newline> <newline> `` James ? '' I query , taking an instinctive step back even as I feel knowledge of various martial arts practises flooding into my mind . `` Is that you ? '' <newline> <newline> He takes a step forward , and I can see he 's panting , out of breath . `` James is my brother ! I 'm *you* , you fucking idiot ! '' <newline> <newline> It 's simple to keep my distance from him . The key with aggressors is to back off slowly , not giving them an excuse to close the ever-widening gap . `` Please , there 's no need to get angry . I 'm not quite sure what you mean . *I'm* me . '' <newline> <newline> Unfortunately , my technique is not quite perfect - or perhaps it just does not matter - and he advances anyways . Now that the initial shock of someone screaming and swearing ( ugh ) at me has worn off , I 'm free to examine him . To be quite honest , I must admit he does look like me . He 's a tad malnourished , not even close to being in shape , and has a potbelly that does n't quite fit on his frame , but otherwise he looks similar to a me that has n't washed or shaved in a week . <newline> <newline> `` I do n't know who the *hell* you are but you are going to get the fuck out of my city ! Out of my *home* ! You ... you ca n't just replace me ! '' One fist turns into a pointing hand , stabbing me in the chest with his index finger . I do n't think he quite expects the resistance he receives . <newline> <newline> `` I 'm sorry , sir , but I 'm afraid I do n't know who you are or why you think I 've replaced you . Perhaps you should try inquiring about this at a local police department ? '' *Rule three-hundred and seventy-nine . Defer to the local police for matters requiring authority . * Huh ? <newline> <newline> He growls , and he 's in my personal space , now . Not something I am entirely comfortable with , but it 's nothing that would set me off . Staying calm is always the correct path to take . `` Look , *kid* , you 're going to fuck off or die or something *right now* because I 'm going home ! To *my* home ! Not *yours* ! '' <newline> <newline> I see the shove coming , and let him do it . My stumble backwards is entirely anticipated , and I feel *great* . It 's such a nice day outside . The man- <newline> <newline> What man ? <newline> <newline> I swivel around , blinking and searching for someone . I 'm not quite sure who . There 's nothing there . <newline> <newline> Something *is* odd , though . <newline> <newline> In the corner of my eye , I see a truck retreating into the distance , coloured completely white . <newline> <newline> It 's not that . The hands on my watch have jumped forward by seven minutes and fifty-nine seconds . <newline> <newline> Odd ."
+    logits = reward.predict(story)
+
+def main_original(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
@@ -865,7 +1008,6 @@ def main(_):
           tf.logging.info("%s = %s" % (key, str(result[key])))
       except tf.errors.NotFoundError:
         tf.logging.error("Checkpoint path '%s' no longer exists.", ckpt)
-
 
 if __name__ == "__main__":
   # flags.mark_flag_as_required("eval_file")

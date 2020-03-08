@@ -21,6 +21,7 @@ from __future__ import print_function
 from bert import modeling
 
 import tensorflow as tf
+import sys
 
 
 def create_model(model, labels, label_types, num_choices, k_size=4):
@@ -53,16 +54,19 @@ def create_model(model, labels, label_types, num_choices, k_size=4):
     context_encoded = tf.transpose(context_encoded, perm=[2, 0, 1])
 
     logits = tf.matmul(targets, context_encoded, transpose_b=True)
-    logits = tf.transpose(logits, perm=[0, 2, 1])
+    logits = tf.transpose(logits, perm=[0, 2, 1]) # batch x (2k) x 32
+    if logits.dtype == tf.int64:
+        logits = tf.to_int32(logits)
 
     example_weights = tf.reduce_sum(tf.one_hot(label_types, k_size * 2), axis=1)
 
     per_example_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=labels)
+        logits=logits, labels=tf.expand_dims(labels, axis=0))
+    # labels: batch x (2k)
     probabilities = tf.nn.softmax(logits, axis=-1)
     loss = tf.reduce_mean(
         tf.reduce_sum(example_weights * per_example_loss, axis=-1))
-
+  
   return (loss, per_example_loss, logits, probabilities)
 
 
