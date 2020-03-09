@@ -39,7 +39,7 @@ from tensorflow.contrib import training as contrib_training
 import sys
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="-1" # force using cpu
+# os.environ["CUDA_VISIBLE_DEVICES"]="-1" # force using cpu
 # if gpu is large, use gpu
 
 FLAGS = flags.FLAGS
@@ -122,7 +122,7 @@ flags.DEFINE_bool("do_train", True, "Whether to run training.")
 
 flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
 
-flags.DEFINE_integer("train_batch_size", 16, "Total batch size for training.")
+flags.DEFINE_integer("train_batch_size", 2, "Total batch size for training.")
 # set to 32 in actual training!
 
 flags.DEFINE_integer("eval_batch_size", 2, "Total batch size for eval.")
