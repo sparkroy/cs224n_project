@@ -44,9 +44,7 @@ def create_model(model, labels, label_types, num_choices, k_size=4):
   with tf.variable_scope("cpc_loss"):
     output = tf.reshape(output_layer, (-1, num_choices + 1, hidden_size))
     contexts = output[:, 0, :]
-    tf.print(contexts)
     targets = output[:, 1:, :]
-    tf.print(targets)
 
     softmax_weights = tf.get_variable(
         "cpc_weights", [k_size * 2, hidden_size, hidden_size],
