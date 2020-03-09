@@ -66,7 +66,8 @@ flags.DEFINE_string(
 flags.DEFINE_bool("include_mlm", True, "Whether to include MLM loss/objective")
 # use masks, set to True in eventual training
 
-flags.DEFINE_integer("num_choices", 32, "Number of negative samples + 1")
+flags.DEFINE_integer("num_choices", 16, "Number of negative samples + 1")
+# original 32
 
 flags.DEFINE_integer("data_window_size", 5, "Number of documents to draw"
                      "negative samples from.")
@@ -94,7 +95,7 @@ flags.DEFINE_bool(
     "models and False for cased models.")
 
 flags.DEFINE_integer(
-    "max_seq_length", 128,
+    "max_seq_length", 64, # shrink to it in gpu!
     "The maximum total input sequence length after WordPiece tokenization. "
     "Sequences longer than this will be truncated, and sequences shorter "
     "than this will be padded.")
@@ -117,7 +118,7 @@ flags.DEFINE_bool("do_train", True, "Whether to run training.")
 
 flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
 
-flags.DEFINE_integer("train_batch_size", 2, "Total batch size for training.")
+flags.DEFINE_integer("train_batch_size", 16, "Total batch size for training.")
 # set to 32 in actual training!
 
 flags.DEFINE_integer("eval_batch_size", 2, "Total batch size for eval.")
