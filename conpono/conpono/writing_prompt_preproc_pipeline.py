@@ -68,8 +68,8 @@ def read_file(filename):
       if not line:
         continue
       tot += 1
-      if tot > 10:
-        break # hard code for quick testing!
+      # if tot > 10:
+      #   break # hard code for quick testing!
       all_stories.append(line)
 
   # Remove empty documents
@@ -118,7 +118,7 @@ def preproc_doc(document):
 
   # In case of any empty paragraphs, remove them.
   list_of_paragraphs = [x for x in list_of_paragraphs if len(x) >= 16] # list of list of token
-  print(len(list_of_paragraphs))
+  print("total valid stories", len(list_of_paragraphs))
 
   # Convert the list of paragraphs into TrainingInstance object
   # See preprocessing_utils.py for definition
@@ -180,13 +180,14 @@ def convert_instance_to_tf_example(tokenizer, sent_tokens, max_sent_length,
 
 def main(_):
   # If using Apache BEAM, execute runner here.
-  test_files = FLAGS.input_file + "/test.wp_target"
-  test_tfrecord = FLAGS.input_file + "/test_target.tfrecord"
-  stories = read_file(test_files)
-  serialized_examples = preproc_doc(stories)
-  with tf.io.TFRecordWriter(test_tfrecord) as writer:
-    for example in serialized_examples:
-      writer.write(example)
+  for mode in ["train", "test", "val"]:
+    test_files = FLAGS.input_file + "/{}.wp_target".format(mode)
+    test_tfrecord = FLAGS.input_file + "/{}_target.tfrecord".format(mode)
+    stories = read_file(test_files)
+    serialized_examples = preproc_doc(stories)
+    with tf.io.TFRecordWriter(test_tfrecord) as writer:
+      for example in serialized_examples:
+        writer.write(example)
 
 if __name__ == "__main__":
   app.run(main)
