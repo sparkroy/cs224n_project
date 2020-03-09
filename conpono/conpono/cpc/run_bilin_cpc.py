@@ -794,7 +794,7 @@ def main(_):
 
   is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
   run_config = contrib_tpu.RunConfig(
-      device_fn=lambda x: "cpu", # use cpu
+      device_fn=lambda op: "cpu", # use cpu
       cluster=tpu_cluster_resolver,
       master=FLAGS.master,
       model_dir=FLAGS.output_dir,
