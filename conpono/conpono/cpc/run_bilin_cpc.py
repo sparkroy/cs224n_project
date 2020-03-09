@@ -38,6 +38,10 @@ from tensorflow.contrib import training as contrib_training
 
 import sys
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="-1" # force using cpu
+# if gpu is large, use gpu
+
 FLAGS = flags.FLAGS
 
 ## Required parameters
@@ -794,7 +798,7 @@ def main(_):
 
   is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
   run_config = contrib_tpu.RunConfig(
-      device_fn=lambda op: "cpu", # use cpu
+      # device_fn=lambda op: "cpu", # use cpu
       cluster=tpu_cluster_resolver,
       master=FLAGS.master,
       model_dir=FLAGS.output_dir,
