@@ -181,7 +181,7 @@ def convert_instance_to_tf_example(tokenizer, sent_tokens, max_sent_length,
 
 def main(_):
   # If using Apache BEAM, execute runner here.
-  for mode in ["train", "test", "val"]:
+  for mode in ["train", "test", "eval"]:
     test_files = FLAGS.input_file + "/{}.wp_target".format(mode)
     test_tfrecord = FLAGS.input_file + "/{}_target.tfrecord".format(mode)
     stories = read_file(test_files)
