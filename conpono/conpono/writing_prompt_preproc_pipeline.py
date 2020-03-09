@@ -173,6 +173,7 @@ def convert_instance_to_tf_example(tokenizer, sent_tokens, max_sent_length,
           mode="constant")[:max_sent_length]
       sent_tensor.append(padded_ids)
   sent_tensor = np.ravel(np.stack(sent_tensor))
+  sent_tensor = sent_tensor.astype(int)
   features["sents"] = create_int_feature(sent_tensor)
 
   tf_example = tf.train.Example(features=tf.train.Features(feature=features))
