@@ -37,7 +37,7 @@ FORMAT_BINARY = "binary"
 FORMAT_PARAGRAPH = "paragraph"
 
 flags.DEFINE_string(
-    "input_file", "/Users/WangRui/Stanford/2019-20winter/cs224n/project/data", "Path to raw input files."
+    "input_file", "../../data", "Path to raw input files."
     "Assumes the filenames wiki.{train|valid|test}.raw")
 flags.DEFINE_string("output_file", None, "Output TF example file.")
 flags.DEFINE_string("vocab_file", "vocab.txt",
