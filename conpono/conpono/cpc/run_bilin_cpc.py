@@ -42,7 +42,7 @@ FLAGS = flags.FLAGS
 
 ## Required parameters
 flags.DEFINE_string(
-    "eval_file", "../../../data/eval_target.tfrecord",
+    "eval_file", "../../../data/valid_target.tfrecord",
     "The input data. Should be in tfrecord format ready to input to BERT.")
 
 flags.DEFINE_string(
