@@ -115,9 +115,9 @@ flags.DEFINE_bool("include_context", True, "Whether to include context.")
 flags.DEFINE_bool("do_train", True, "Whether to run training.")
 # need to change this to True in training
 
-flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
+flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
 
-flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
+flags.DEFINE_integer("train_batch_size", 2, "Total batch size for training.")
 # set to 32 in actual training!
 
 flags.DEFINE_integer("eval_batch_size", 32, "Total batch size for eval.")
@@ -128,7 +128,7 @@ flags.DEFINE_integer("train_data_size", 10, "The number of examples in the"
 flags.DEFINE_integer("eval_data_size", -1, "The number of examples in the"
                      "validation data")
 
-flags.DEFINE_integer("predict_batch_size", 8, "Total batch size for predict.")
+flags.DEFINE_integer("predict_batch_size", 1, "Total batch size for predict.")
 
 flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
 
@@ -636,7 +636,6 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
 
   return input_fn
 
-
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
                      use_one_hot_embeddings, num_choices, add_masking):
@@ -669,7 +668,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         token_type_ids=segment_ids,
         use_one_hot_embeddings=use_one_hot_embeddings)
 
-    (cpc_loss, _, logits, probabilities) = bilin_model_builder.create_model(
+    (cpc_loss, _, logits, probabilities, labels) = bilin_model_builder.create_model(
         model, label_ids, label_types, num_choices, k_size=FLAGS.k_size)
 
     if add_masking:
@@ -757,14 +756,142 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           loss=total_loss,
           eval_metrics=eval_metrics,
           scaffold_fn=scaffold_fn)
-    else:
+    else: # if mode == tf.estimator.ModeKeys.PREDICT:
       output_spec = contrib_tpu.TPUEstimatorSpec(
           mode=mode,
-          predictions={"probabilities": probabilities},
+          predictions={"probabilities": probabilities, "logits": logits, "labels": labels}, # add logits as well!
           scaffold_fn=scaffold_fn)
     return output_spec
 
   return model_fn
+# def model_fn_builder(bert_config, init_checkpoint, learning_rate,
+#                      num_train_steps, num_warmup_steps, use_tpu,
+#                      use_one_hot_embeddings, num_choices, add_masking):
+#   """Returns `model_fn` closure for TPUEstimator."""
+
+#   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
+#     """The `model_fn` for TPUEstimator."""
+
+#     tf.logging.info("*** Features ***")
+#     for name in sorted(features.keys()):
+#       tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
+
+#     input_ids = tf.reshape(features["input_ids"], [-1, FLAGS.max_seq_length])
+#     input_mask = tf.reshape(features["input_mask"], [-1, FLAGS.max_seq_length])
+#     segment_ids = tf.reshape(features["segment_ids"],
+#                              [-1, FLAGS.max_seq_length])
+
+#     label_types = features["label_types"]
+#     label_ids = features["label_ids"]
+
+#     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
+#     is_real_example = tf.reduce_sum(
+#         tf.one_hot(label_types, FLAGS.k_size * 2), axis=1)
+
+#     model = modeling.BertModel(
+#         config=bert_config,
+#         is_training=is_training,
+#         input_ids=input_ids,
+#         input_mask=input_mask,
+#         token_type_ids=segment_ids,
+#         use_one_hot_embeddings=use_one_hot_embeddings)
+
+#     (cpc_loss, _, logits, probabilities) = bilin_model_builder.create_model(
+#         model, label_ids, label_types, num_choices, k_size=FLAGS.k_size)
+
+#     if add_masking:
+#       mask_rate = FLAGS.mask_rate  # search alternatives?
+#       max_predictions_per_seq = int(math.ceil(FLAGS.max_seq_length * mask_rate))
+#       masked_lm_positions = tf.reshape(features["mask_indices"],
+#                                        [-1, max_predictions_per_seq])
+#       masked_lm_ids = tf.reshape(features["target_token_ids"],
+#                                  [-1, max_predictions_per_seq])
+#       masked_lm_weights = tf.reshape(features["target_token_weights"],
+#                                      [-1, max_predictions_per_seq])
+#       (masked_lm_loss, _, _) = bilin_model_builder.get_masked_lm_output(
+#           bert_config, model.get_sequence_output(), model.get_embedding_table(),
+#           masked_lm_positions, masked_lm_ids, masked_lm_weights)
+#       total_loss = cpc_loss + masked_lm_loss
+#     else:
+#       total_loss = cpc_loss
+#       masked_lm_loss = tf.constant([0])
+
+#     tvars = tf.trainable_variables()
+#     initialized_variable_names = {}
+#     scaffold_fn = None
+#     if init_checkpoint:
+#       (assignment_map, initialized_variable_names
+#       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+
+#       if use_tpu:
+
+#         def tpu_scaffold():
+#           tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+#           return tf.train.Scaffold()
+
+#         scaffold_fn = tpu_scaffold
+#       else:
+#         tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+
+#     tf.logging.info("**** Trainable Variables ****")
+#     for var in tvars:
+#       init_string = ""
+#       if var.name in initialized_variable_names:
+#         init_string = ", *INIT_FROM_CKPT*"
+#       tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+#                       init_string)
+
+#     output_spec = None
+#     if mode == tf.estimator.ModeKeys.TRAIN:
+
+#       train_op = optimization.create_optimizer(total_loss, learning_rate,
+#                                                num_train_steps,
+#                                                num_warmup_steps, use_tpu)
+
+#       output_spec = contrib_tpu.TPUEstimatorSpec(
+#           mode=mode,
+#           loss=total_loss,
+#           train_op=train_op,
+#           scaffold_fn=scaffold_fn)
+
+#     elif mode == tf.estimator.ModeKeys.EVAL:
+
+#       def metric_fn(cpc_loss, mlm_loss, label_ids, logits, is_real_example):
+#         """Collect metrics for function."""
+
+#         predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
+#         accuracy = tf.metrics.accuracy(
+#             labels=label_ids, predictions=predictions, weights=is_real_example)
+#         cpc_loss_metric = tf.metrics.mean(values=cpc_loss)
+#         mlm_loss_metric = tf.metrics.mean(values=mlm_loss)
+#         metric_dict = {
+#             "eval_accuracy": accuracy,
+#             "eval_cpc_loss": cpc_loss_metric,
+#             "eval_mlm_loss": mlm_loss_metric
+#         }
+#         for i in range(FLAGS.k_size * 2):
+#           metric_dict["acc" + str(i)] = tf.metrics.accuracy(
+#               labels=label_ids[:, i],
+#               predictions=predictions[:, i],
+#               weights=is_real_example[:, i])
+#         return metric_dict
+
+#       eval_metrics = (metric_fn, [
+#           cpc_loss, masked_lm_loss, label_ids, logits, is_real_example
+#       ])
+#       output_spec = contrib_tpu.TPUEstimatorSpec(
+#           mode=mode,
+#           loss=total_loss,
+#           eval_metrics=eval_metrics,
+#           scaffold_fn=scaffold_fn)
+#     else:
+#       output_spec = contrib_tpu.TPUEstimatorSpec(
+#           mode=mode,
+#           predictions={"probabilities": probabilities},
+#           scaffold_fn=scaffold_fn)
+#     return output_spec
+
+#   return model_fn
 
 
 def main(_):

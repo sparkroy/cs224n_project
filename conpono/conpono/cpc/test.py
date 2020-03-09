@@ -891,18 +891,10 @@ class RewardShaper():
         self.story = story
         self.story_features = self.tokenize_story(self.story)
         # estimator automatically uses the latest ckpt from model_dir (defined inside run_config)
-        # do we need to set mode to test??
-        # probabilities is the only key in predictions
-        # tf.logging.info("***** Running training *****")
-        # train_input_fn = file_based_input_fn_builder(
-        #     input_file=FLAGS.train_file,
-        #     is_training=True,
-        #     drop_remainder=True,
-        #     add_masking=FLAGS.include_mlm)
-        # self.estimator.train(input_fn=train_input_fn, steps=1)
         input_function = self.generate_input_fn()
 
         sum_score = 0.
+        sum_tests = 0
         for self.length_before_context in range(0,
             self.story_length - FLAGS.context_size + 1):
             predictions = self.estimator.predict(input_fn=input_function, predict_keys=['logits', 'labels'])
@@ -913,8 +905,10 @@ class RewardShaper():
             for i in range(2 * FLAGS.k_size):
                 score += scores[i][labels[i]]
             sum_score += score
+            sum_tests += 1
         
-        ave_score = sum_score / (self.story_length - FLAGS.context_size + 1)
+        assert sum_tests != 0
+        ave_score = sum_score / sum_tests
 
         return ave_score
 

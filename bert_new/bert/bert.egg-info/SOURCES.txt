@@ -1,0 +1,7 @@
+README.md
+setup.py
+bert.egg-info/PKG-INFO
+bert.egg-info/SOURCES.txt
+bert.egg-info/dependency_links.txt
+bert.egg-info/eager_resources.txt
+bert.egg-info/top_level.txt
