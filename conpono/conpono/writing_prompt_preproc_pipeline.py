@@ -68,8 +68,8 @@ def read_file(filename):
       if not line:
         continue
       tot += 1
-      # if tot > 10:
-      #   break # hard code for quick testing!
+      if tot > 10:
+        break # hard code for quick testing!
       all_stories.append(line)
 
   # Remove empty documents
