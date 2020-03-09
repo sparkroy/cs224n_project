@@ -568,8 +568,8 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder,
     example["label_ids"] = tf.scatter_nd(
         tf.reshape(example["label_types"], [k_size, 1]), tf.range(k_size),
         [k_size * 2])
-    tf.print("label_types:", example["label_types"], output_stream=sys.stdout)
-    tf.print("label_ids:", example["label_ids"], output_stream=sys.stdout)
+    # tf.print("label_types:", example["label_types"], output_stream=sys.stdout)
+    # tf.print("label_ids:", example["label_ids"], output_stream=sys.stdout)
 
     # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
     # So cast all int64 to int32.
