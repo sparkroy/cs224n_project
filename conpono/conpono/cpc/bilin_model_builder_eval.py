@@ -63,13 +63,13 @@ def create_model(model, labels, label_types, num_choices, k_size=4):
     example_weights = tf.reduce_sum(tf.one_hot(label_types, k_size * 2), axis=1)
 
     per_example_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=labels)
+        logits=logits, labels=tf.expand_dims(labels, axis=0))
     # labels: batch x (2k)
     probabilities = tf.nn.softmax(logits, axis=-1)
     loss = tf.reduce_mean(
         tf.reduce_sum(example_weights * per_example_loss, axis=-1))
   
-  return (loss, per_example_loss, logits, probabilities)
+  return (loss, per_example_loss, logits, probabilities, tf.expand_dims(labels, axis=0))
 
 
 def gather_indexes(sequence_tensor, positions):

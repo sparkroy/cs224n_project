@@ -25,7 +25,7 @@ from absl import flags
 from bert import modeling
 from bert import optimization
 from bert import tokenization
-from conpono.cpc import bilin_model_builder
+from conpono.cpc import bilin_model_builder_eval as bilin_model_builder
 from conpono.reconstruct import preprocess as ip
 import tensorflow as tf
 
